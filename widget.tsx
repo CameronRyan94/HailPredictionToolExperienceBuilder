@@ -6,6 +6,9 @@ import { MapViewManager } from 'jimu-arcgis'
 import * as geoprocessor from "@arcgis/core/rest/geoprocessor.js";
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer'
 import { DataSourceManager, DataSourceTypes } from 'jimu-core';
+import SimpleLineSymbol from '@arcgis/core/symbols/SimpleLineSymbol'
+import { DatePicker } from 'jimu-ui/basic/date-picker'
+
 
 export default function Widget(props: AllWidgetProps<IMConfig>) {
 
@@ -18,6 +21,26 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 	const [tableData, setTableData] = useState<any[]>([]);
 	const [showTable, setShowTable] = useState(false)
 	const dsManager = useRef(DataSourceManager.getInstance())
+	const hailColorMap = {
+		'0.75': [255, 255, 190],
+		'1': [255, 255, 34],
+		'1.25': [255, 212, 0],
+		'1.5': [255, 157, 0],
+		'1.75': [255, 102, 0],
+		'2': [255, 45, 0],
+		'2.25': [249, 0, 0],
+		'2.5': [226, 0, 0],
+		'2.75': [206, 0, 0],
+		'3': [182, 0, 0],
+		'3.25': [160, 0, 0],
+		'3.5': [168, 0, 39],
+		'3.75': [189, 0, 96]
+	};
+	const totalColor = {
+		'Total' : [113, 153, 251]
+	}
+	const [hideCols, setHideCols] = useState(false);
+	const toggleHideCols = () => setHideCols(prev => !prev);
 
 
 
@@ -47,6 +70,12 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 			.then((layer) => {
 				console.log('Retrieved hail layer data:', layer);
 				console.log(layer.value.features)
+				
+				let line = new SimpleLineSymbol({
+					style: 'solid',
+					color: [110, 110, 110, 1],
+					width: .5,
+				})
 
 				let hailLayer = new FeatureLayer({
 					source: layer.value.features,
@@ -58,7 +87,110 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 					layerId: 0,
 				})
 
-								const data: DataSourceJson = {
+				hailLayer.renderer = {
+					type: "unique-value",  // autocasts as new UniqueValueRenderer()
+					// @ts-ignore
+					field: "diameter_in_label",
+					defaultSymbol: {
+						type: "simple-fill",
+						outline: line,
+						color: [209, 0, 152, 1.0]
+					},
+					uniqueValueInfos: [{
+						value: '0.75"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [255, 255, 190, 1.0],
+							outline: line
+						}
+					}, {
+						value: '1"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [255, 255, 34, 1.0],
+							outline: line
+						}
+					}, {
+						value: "1.25\"",
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [255, 212, 0, 1.0],
+							outline: line
+						}
+					}, {
+						value: '1.5"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [255, 157, 0, 1.0],
+							outline: line
+						}
+					}, {
+						value: '1.75"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [255, 102, 0, 1.0],
+							outline: line
+						}
+					}, {
+						value: '2"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [255, 45, 0, 1.0],
+							outline: line
+						}
+					}, {
+						value: '2.25"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [249, 0, 0, 1.0],
+							outline: line
+						}
+					}, {
+						value: '2.5"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [226, 0, 0, 1.0],
+							outline: line
+						}
+					}, {
+						value: '2.75"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [206, 0, 0, 1.0],
+							outline: line
+						}
+					}, {
+						value: '3"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [182, 0, 0, 1.0],
+							outline: line
+						}
+					}, {
+						value: '3.25"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [160, 0, 0, 1.0],
+							outline: line
+						}
+					}, {
+						value: '3.5"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [168, 0, 39, 1.0],
+							outline: line
+						}
+					}, {
+						value: '3.75"',
+						symbol: {
+							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							color: [189, 0, 96, 1.0],
+							outline: line
+						}
+					}]
+				}
+
+				const data: DataSourceJson = {
 					id: 'hail_ds_',
 					layerId: hailLayer.id,
 					type: DataSourceTypes.FeatureLayer,
@@ -158,18 +290,48 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 		}
 	};
 
+	type TableRow = {
+		diam_in?: number;
+		[key: string]: any;
+	};
+
+	const DIAMETER_FIELD = 'diam_in';
+
+	const hasMultipleValues = (row: TableRow): boolean => {
+		if (!row) return false;
+
+		const fields = Object.keys(row);
+		const nonEmptyFields = fields.filter(field => {
+			const value = row[field];
+			return (
+				field !== DIAMETER_FIELD && 
+				value !== null && 
+				value !== undefined && 
+				value !== '' &&
+				// Add check for zero values
+				!(typeof value === 'number' && value === 0)
+			);
+		});
+
+		return nonEmptyFields.length > 0;
+	};
+
 	return (
 		<div>
 			{!showTable ? (
 			// FIRST WINDOW: Date picker + submit button
 			<div className="canopy-page-container">
 				{/* Date Picker */}
-				<input
-				type="text"
-				className="text-box"
-				placeholder="YYYY-MM-DD"
-				value={stormDate}
-				onChange={(e) => setStormDate(e.target.value)}
+				<DatePicker className="canopy-FormDate"
+				aria-describedby="canopy-date-picker-desc-id"
+				aria-label="DateTime picker label"
+				format="shortDate"
+				showDoneButton
+				onChange={(evt) => setStormDate(new Date(evt))}
+				selectedDate={stormDate}
+				strategy="fixed"
+				runtime
+				maxDate={new Date()}
 				/>
 				{/* Submit Button */}
 				<button
@@ -180,43 +342,96 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 				{isRunning ? 'Running...' : 'Run Analysis'}
 				</button>
 				<div>{status}</div>
+				<div className="helper-text">
+					Select a date, and the program will analyze historical hail event data 
+					from the database to predict the expected number of insurance claims.
+					<ul>
+						<li>The 10th to 90th percentile range represents the span within which 90% 
+						of potential claims are likely to fall.</li>
+						<li>The 25th to 75th percentile range captures the middle 50% of expected claims.</li>
+						<li>The 50th percentile reflects the median, or approximate average, number of claims.</li>
+					</ul>
+				</div>
 			</div>
 			) : (
 			// SECOND WINDOW: Table + back button
-			<div className="canopy-page-container">
-				<button
-					className="button"
-					onClick={() => setShowTable(false)}
-					style={{ marginBottom: 10 }}
-				>
-					← Back to Date Selection
-				</button>
+			<div className="canopy-page-container table-wrapper">
+				<div className="back-button">
+					<button
+						className="button"
+						onClick={() => setShowTable(false)}
+					>
+						← Back to Date Selection
+					</button>
+				</div>
 
-				{/* Render tables for each label */}
-				{tableData.map((group, idx) => (
-					<div key={idx} style={{ marginBottom: 30 }}>
-					<h3>{group.label}</h3>
-					<table className="hail-table">
-						<thead>
-						<tr>
-							{group.columns.map((col: string) => (
-							<th key={col}>{col}</th>
-							))}
-						</tr>
-						</thead>
-						<tbody>
-						{group.rows.map((row, rowIndex) => (
-							<tr key={rowIndex}>
-							{group.columns.map((col: string) => (
-								<td key={col}>{row[col]}</td>
-							))}
-							</tr>
+				<div className="scrollable-container">
+					{tableData
+						// First filter out groups with no valid rows
+						.filter(group => group.rows.some(hasMultipleValues))
+						// Map through each remaining group to create table sections
+						.map((group, idx) => (
+							<div key={idx} style={{ marginBottom: 30 }}>
+							{/* Display the group label as a heading */}
+								<h3>{group.label}</h3>
+								<table className="hail-table">
+									<thead>
+										<tr>
+											{/* Create table headers from column names */}
+											{group.columns.map((col: string) => (
+												<th key={col}>{col}</th>
+											))}
+										</tr>
+									</thead>
+									<tbody>
+										{group.rows
+											.filter(hasMultipleValues)
+											.map((row, rowIndex, rowArray) => {
+												const hiddenIndexes = [2, 6]; // 3rd and 7th columns (0-based)
+												const visibleColumns = hideCols
+													? group.columns.filter((_, idx) => !hiddenIndexes.includes(idx))
+													: group.columns;
+												const isTotalRow = rowIndex === rowArray.length - 1;
+												const diameterValue = String(row[DIAMETER_FIELD]);
+												const colorArray = hailColorMap?.[diameterValue];
+												const rowStyle = isTotalRow
+													? { backgroundColor: `rgb(${totalColor['Total'].join(',')})` }
+													: colorArray
+														? { backgroundColor: `rgb(${colorArray.join(',')})` }
+														: {};
+
+												return (
+												 <tr key={rowIndex} style={rowStyle}>
+													{visibleColumns.map((col: string, colIndex) => {
+													// Get original column index for logic like empty first cell, 'Total', etc.
+													const originalIndex = group.columns.indexOf(col);
+
+													let cellContent = '';
+													if (rowIndex === 0 && originalIndex === 0) {
+														cellContent = '';
+													} else if (originalIndex === 0 && isTotalRow) {
+														cellContent = 'Total';
+													} else if (originalIndex === 0) {
+														cellContent = `${row[col]}"`;
+													} else {
+														cellContent = row[col];
+													}
+
+													return <td key={col}>{cellContent}</td>;
+													})}
+												</tr>
+												);
+											})}
+									</tbody>
+								</table>
+							</div>
 						))}
-						</tbody>
-					</table>
-					</div>
-				))}
-			</div>
-		)}
-	</div>
-)}
+						<button className="button" onClick={toggleHideCols}>
+							Show more data
+						</button>
+					</div>	
+				</div>
+			)}
+		</div>
+	);
+}
