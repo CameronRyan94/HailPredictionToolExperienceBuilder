@@ -379,7 +379,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 				<div className="back-button">
 					<button
 						className="button"
-						onClick={() => setShowTable(false)}
+						onClick={() => { setShowTable(false); setStatus('Waiting for user input'); }}
 					>
 						← Back to Date Selection
 					</button>
