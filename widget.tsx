@@ -37,10 +37,19 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 		'3.75': [189, 0, 96]
 	};
 	const totalColor = {
-		'Total' : [113, 153, 251]
+		'Total' : [180, 180, 180]
 	}
-	const [hideCols, setHideCols] = useState(false);
+	const [hideCols, setHideCols] = useState(true);
 	const toggleHideCols = () => setHideCols(prev => !prev);
+	const headerLabels: Record<string, string> = {
+		diam_in: 'Hail Size',
+		count: 'Count',
+		'10th%': '10th Percentile',
+		'25th%': '1st Quartile',
+		'50th%': 'Mean',
+		'75th%': '3rd Quartile',
+		'90th%': '90th Percentile',
+	};
 
 
 
@@ -245,16 +254,14 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 	const handleRunProcess = async () => {
 		setIsRunning(true);
 		setStatus('Running analysis...');
-		
+		let params
+		params = {
+			Hail_date: stormDate.toISOString().split('T')[0]
+		}
 		try {
-			// Submit the GP job first
-			const params = {
-				Date: stormDate
-			};
-			
 			// Run the geoprocessing job
 			const submitResponse = await geoprocessor.submitJob(HailPredictionURL, params);
-			
+
 			console.log('[DEBUG] Job submitted:', submitResponse);
 			
 			// Wait for job completion
@@ -335,13 +342,12 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 				/>
 				{/* Submit Button */}
 				<button
-				className="button"
-				onClick={handleRunProcess}
-				disabled={isRunning}
+					className="button"
+					onClick={handleRunProcess}
+					disabled={isRunning}
 				>
 				{isRunning ? 'Running...' : 'Run Analysis'}
 				</button>
-				<div>{status}</div>
 				<div className="helper-text">
 					Select a date, and the program will analyze historical hail event data 
 					from the database to predict the expected number of insurance claims.
@@ -352,10 +358,24 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 						<li>The 50th percentile reflects the median, or approximate average, number of claims.</li>
 					</ul>
 				</div>
+				{status !== 'Waiting for user input' && (
+				<div className="analysis-loading-container">
+					<div className="lds-ring" id="loadingIcon">
+					<div></div><div></div><div></div><div></div>
+					</div>
+				</div>
+				)}
 			</div>
 			) : (
 			// SECOND WINDOW: Table + back button
 			<div className="canopy-page-container table-wrapper">
+				<h2 style={{ textAlign: 'center', marginBottom: '5px' }}>
+					Hail Prediction for: {new Date(stormDate).toLocaleDateString('en-US', {
+						year: 'numeric',
+						month: 'long',
+						day: 'numeric',
+					})}
+				</h2>
 				<div className="back-button">
 					<button
 						className="button"
@@ -370,65 +390,90 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 						// First filter out groups with no valid rows
 						.filter(group => group.rows.some(hasMultipleValues))
 						// Map through each remaining group to create table sections
-						.map((group, idx) => (
-							<div key={idx} style={{ marginBottom: 30 }}>
-							{/* Display the group label as a heading */}
-								<h3>{group.label}</h3>
-								<table className="hail-table">
-									<thead>
-										<tr>
-											{/* Create table headers from column names */}
-											{group.columns.map((col: string) => (
-												<th key={col}>{col}</th>
-											))}
-										</tr>
-									</thead>
-									<tbody>
-										{group.rows
-											.filter(hasMultipleValues)
-											.map((row, rowIndex, rowArray) => {
-												const hiddenIndexes = [2, 6]; // 3rd and 7th columns (0-based)
-												const visibleColumns = hideCols
-													? group.columns.filter((_, idx) => !hiddenIndexes.includes(idx))
-													: group.columns;
-												const isTotalRow = rowIndex === rowArray.length - 1;
-												const diameterValue = String(row[DIAMETER_FIELD]);
-												const colorArray = hailColorMap?.[diameterValue];
-												const rowStyle = isTotalRow
-													? { backgroundColor: `rgb(${totalColor['Total'].join(',')})` }
-													: colorArray
-														? { backgroundColor: `rgb(${colorArray.join(',')})` }
-														: {};
+						.map((group, idx) => {
+							const hiddenIndexes = [2, 6]; // 3rd and 7th columns (0-based)
+							const visibleColumns = hideCols
+								? group.columns.filter((_, idx) => !hiddenIndexes.includes(idx))
+								: group.columns;
 
-												return (
-												 <tr key={rowIndex} style={rowStyle}>
-													{visibleColumns.map((col: string, colIndex) => {
-													// Get original column index for logic like empty first cell, 'Total', etc.
-													const originalIndex = group.columns.indexOf(col);
+							return (
+								<div key={idx} style={{ marginBottom: 30 }}>
+								{/* Display the group label as a heading */}
+									<h3>{group.label}</h3>				
+									<table className="hail-table">
+										<thead>
+											<tr>
+												{/* Create table headers from column names */}
+												{visibleColumns.map((col: string) => (
+													<th key={col}>{headerLabels[col] ?? col}</th>
+												))}
+											</tr>
+										</thead>
+										<tbody>
+											{group.rows
+												.filter(hasMultipleValues)
+												.map((row, rowIndex, rowArray) => {
+													
+													const isTotalRow = rowIndex === rowArray.length - 1;
+													const diameterValue = String(row[DIAMETER_FIELD]);
+													const colorArray = hailColorMap?.[diameterValue];
+													const rowStyle = isTotalRow
+														? { backgroundColor: `rgb(${totalColor['Total'].join(',')})` }
+														: colorArray
+															? { backgroundColor: `rgb(${colorArray.join(',')})` }
+															: {};
 
-													let cellContent = '';
-													if (rowIndex === 0 && originalIndex === 0) {
-														cellContent = '';
-													} else if (originalIndex === 0 && isTotalRow) {
-														cellContent = 'Total';
-													} else if (originalIndex === 0) {
-														cellContent = `${row[col]}"`;
-													} else {
-														cellContent = row[col];
-													}
+													return (
+													<tr key={rowIndex} style={{ ...rowStyle, fontWeight: isTotalRow ? 'bold' : 'normal' }}>
+														{visibleColumns.map((col: string, colIndex) => {
+														const originalIndex = group.columns.indexOf(col);
 
-													return <td key={col}>{cellContent}</td>;
-													})}
-												</tr>
-												);
-											})}
-									</tbody>
-								</table>
-							</div>
-						))}
-						<button className="button" onClick={toggleHideCols}>
-							Show more data
-						</button>
+														let cellContent = '';
+														if (rowIndex === 0 && originalIndex === 1) {
+															cellContent = '';
+														} else if (originalIndex === 0 && isTotalRow) {
+															cellContent = 'Total';
+														} else if (originalIndex === 0) {
+															cellContent = `${row[col]}"`;
+														} else {
+															const rawValue = row[col];
+															cellContent =
+															typeof rawValue === 'number'
+																? Math.round(rawValue)
+																: rawValue;
+														}
+														return <td
+															key={colIndex}
+															style={
+															colIndex <= 1
+																? {
+																	backgroundColor: isTotalRow
+																	? `rgb(${totalColor['Total'].join(',')})`
+																	: colorArray
+																	? `rgb(${colorArray.join(',')})`
+																	: undefined,
+																	fontWeight: isTotalRow ? 'bold' : 'normal'
+																}
+																: {
+																	fontWeight: isTotalRow ? 'bold' : 'normal'
+																}
+															}
+														>
+															{cellContent}
+														</td>
+														})}
+													</tr>
+													);
+												})}
+										</tbody>
+									</table>
+								</div>
+							)})}
+						<div className="button-wrapper">
+							<button className="button" onClick={toggleHideCols}>
+								{hideCols ? 'Show more data' : 'Show less data'}
+							</button>
+						</div>
 					</div>	
 				</div>
 			)}
