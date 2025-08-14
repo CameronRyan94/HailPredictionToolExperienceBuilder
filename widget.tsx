@@ -16,6 +16,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 	const [status, setStatus] = useState('Waiting for user input')
 	const canopyHost = useRef(window.location.hostname)
 	const [isRunning, setIsRunning] = useState(false)
+	const [frozenStormDate, setFrozenStormDate] = useState(null);
 	const map = useRef(null)
 	const [jobInfo, setJobInfo] = useState<any>(null);
 	const [tableData, setTableData] = useState<any[]>([]);
@@ -36,6 +37,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 		'3.5': [168, 0, 39],
 		'3.75': [189, 0, 96]
 	};
+	const sortedKeys = Object.keys(hailColorMap).map(Number).sort((a, b) => a - b);
 	const totalColor = {
 		'Total' : [180, 180, 180]
 	}
@@ -44,11 +46,34 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 	const headerLabels: Record<string, string> = {
 		diam_in: 'Hail Size',
 		count: 'Count',
-		'10th%': '10th Percentile',
-		'25th%': '1st Quartile',
+		'10th%': 'Low',
+		'25th%': 'Lower Bound',
 		'50th%': 'Mean',
-		'75th%': '3rd Quartile',
-		'90th%': '90th Percentile',
+		'75th%': 'Upper Bound',
+		'90th%': 'Max',
+	};
+	const [timer, setTimer] = useState(0);
+	const timerRef = useRef<NodeJS.Timer | null>(null);
+
+	useEffect(() => {
+		if (isRunning) {
+			setTimer(0);
+			timerRef.current = setInterval(() => setTimer(prev => prev + 1), 1000);
+		} else if (!isRunning && timerRef.current) {
+			clearInterval(timerRef.current);
+			timerRef.current = null;
+		}
+
+		return () => {
+			if (timerRef.current) clearInterval(timerRef.current);
+		}
+	}, [isRunning]);
+
+	// Format seconds into mm:ss
+	const formatTime = (seconds) => {
+		const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+		const secs = (seconds % 60).toString().padStart(2, '0');
+		return `${mins}:${secs}`;
 	};
 
 
@@ -252,6 +277,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 
 	// Main process
 	const handleRunProcess = async () => {
+		setFrozenStormDate(stormDate);
 		setIsRunning(true);
 		setStatus('Running analysis...');
 		let params
@@ -343,23 +369,48 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 				{/* Submit Button */}
 				<button
 					className="button"
+					disabled={isRunning}          // makes it unclickable
 					onClick={handleRunProcess}
-					disabled={isRunning}
+					style={{
+						cursor: isRunning ? 'not-allowed' : 'pointer',
+						opacity: isRunning ? 0.5 : 1,   // greyed out effect
+					}}
 				>
 				{isRunning ? 'Running...' : 'Run Analysis'}
 				</button>
-				<div className="helper-text">
+				<div  style={{ alignItems: 'center' }} className="helper-text">
 					Select a date, and the program will analyze historical hail event data 
 					from the database to predict the expected number of insurance claims.
 					<ul>
-						<li>The 10th to 90th percentile range represents the span within which 90% 
-						of potential claims are likely to fall.</li>
-						<li>The 25th to 75th percentile range captures the middle 50% of expected claims.</li>
-						<li>The 50th percentile reflects the median, or approximate average, number of claims.</li>
+						<li>Separate tables for states with significant shares of total claims: Texas (52.5%), Colorado (11.3%), and Other states combined (36.2%)</li>
+						<li>The mean reflects the approximate average number of claims.</li>
+						<li>The lower bound and upper bound represent the range of expected claims.</li>
+						<li>The 1st and 99th percentiles represent the extreme ends of the distribution, indicating rare events.</li>
 					</ul>
 				</div>
+				{isRunning && (
+					<ul style={{
+						display: 'flex',
+						justifyContent: 'center',   // horizontal centering
+						listStyle: 'none',
+						padding: 0
+					}}>
+						<li>
+							Predicting hail for {new Date(frozenStormDate).toLocaleDateString('en-US', {
+							year: 'numeric',
+							month: 'long',
+							day: 'numeric',
+							})}.
+						</li>
+					</ul>
+				)}
+				{timer > 0 && (
+					<div className="timer-display">
+						Elapsed Time: {formatTime(timer)}
+					</div>
+				)}
 				{status !== 'Waiting for user input' && (
-				<div className="analysis-loading-container">
+				<div style={{ alignItems: 'center' }} className="analysis-loading-container">
 					<div className="lds-ring" id="loadingIcon">
 					<div></div><div></div><div></div><div></div>
 					</div>
@@ -370,7 +421,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 			// SECOND WINDOW: Table + back button
 			<div className="canopy-page-container table-wrapper">
 				<h2 style={{ textAlign: 'center', marginBottom: '5px' }}>
-					Hail Prediction for: {new Date(stormDate).toLocaleDateString('en-US', {
+					Hail Prediction for: {new Date(frozenStormDate).toLocaleDateString('en-US', {
 						year: 'numeric',
 						month: 'long',
 						day: 'numeric',
@@ -416,17 +467,26 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 													
 													const isTotalRow = rowIndex === rowArray.length - 1;
 													const diameterValue = String(row[DIAMETER_FIELD]);
-													const colorArray = hailColorMap?.[diameterValue];
+													let colorArray = hailColorMap?.[diameterValue];
+
+													if (!colorArray) {
+														const numericValue = Number(diameterValue);
+														if (!isNaN(numericValue)) {
+															const largestKey = sortedKeys[sortedKeys.length - 1];
+															if (numericValue > largestKey) {
+																colorArray = hailColorMap[largestKey]; // last color
+															}
+														}
+													}
+
 													const rowStyle = isTotalRow
-														? { backgroundColor: `rgb(${totalColor['Total'].join(',')})` }
-														: colorArray
-															? { backgroundColor: `rgb(${colorArray.join(',')})` }
-															: {};
+														? { backgroundColor: `rgb(${totalColor['Total'].join(',')})`, fontWeight: 'bold' }
+														: { fontWeight: 'normal' };
 
 													return (
-													<tr key={rowIndex} style={{ ...rowStyle, fontWeight: isTotalRow ? 'bold' : 'normal' }}>
-														{visibleColumns.map((col: string, colIndex) => {
-														const originalIndex = group.columns.indexOf(col);
+														<tr key={rowIndex} style={rowStyle}>
+															{visibleColumns.map((col: string, colIndex) => {
+																const originalIndex = group.columns.indexOf(col);
 
 														let cellContent = '';
 														if (rowIndex === 0 && originalIndex === 1) {
@@ -442,23 +502,22 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 																? Math.round(rawValue)
 																: rawValue;
 														}
-														return <td
-															key={colIndex}
-															style={
+
+														const cellStyle =
 															colIndex <= 1
-																? {
-																	backgroundColor: isTotalRow
+															? {
+																backgroundColor: isTotalRow
 																	? `rgb(${totalColor['Total'].join(',')})`
 																	: colorArray
 																	? `rgb(${colorArray.join(',')})`
 																	: undefined,
-																	fontWeight: isTotalRow ? 'bold' : 'normal'
+																fontWeight: isTotalRow ? 'bold' : 'normal',
 																}
-																: {
-																	fontWeight: isTotalRow ? 'bold' : 'normal'
-																}
-															}
-														>
+															: {
+																fontWeight: isTotalRow ? 'bold' : 'normal',
+																};
+
+														return <td key={colIndex} style={cellStyle}>
 															{cellContent}
 														</td>
 														})}
