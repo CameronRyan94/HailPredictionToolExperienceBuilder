@@ -9,51 +9,70 @@ import { DataSourceManager, DataSourceTypes } from 'jimu-core';
 import SimpleLineSymbol from '@arcgis/core/symbols/SimpleLineSymbol'
 import { DatePicker } from 'jimu-ui/basic/date-picker'
 
-
+// Widget component
 export default function Widget(props: AllWidgetProps<IMConfig>) {
 
-	const [stormDate, setStormDate] = useState<string>('')
-	const [status, setStatus] = useState('Waiting for user input')
-	const canopyHost = useRef(window.location.hostname)
-	const [isRunning, setIsRunning] = useState(false)
-	const [frozenStormDate, setFrozenStormDate] = useState(null);
-	const map = useRef(null)
-	const [jobInfo, setJobInfo] = useState<any>(null);
-	const [tableData, setTableData] = useState<any[]>([]);
-	const [showTable, setShowTable] = useState(false)
-	const dsManager = useRef(DataSourceManager.getInstance())
-	const hailColorMap = {
-		'0.75': [255, 255, 190],
-		'1': [255, 255, 34],
-		'1.25': [255, 212, 0],
-		'1.5': [255, 157, 0],
-		'1.75': [255, 102, 0],
-		'2': [255, 45, 0],
-		'2.25': [249, 0, 0],
-		'2.5': [226, 0, 0],
-		'2.75': [206, 0, 0],
-		'3': [182, 0, 0],
-		'3.25': [160, 0, 0],
-		'3.5': [168, 0, 39],
-		'3.75': [189, 0, 96]
-	};
-	const sortedKeys = Object.keys(hailColorMap).map(Number).sort((a, b) => a - b);
-	const totalColor = {
-		'Total' : [180, 180, 180]
-	}
-	const [hideCols, setHideCols] = useState(true);
-	const toggleHideCols = () => setHideCols(prev => !prev);
-	const headerLabels: Record<string, string> = {
-		diam_in: 'Hail Size',
-		count: 'Count',
-		'10th%': 'Low',
-		'25th%': 'Lower Bound',
-		'50th%': 'Mean',
-		'75th%': 'Upper Bound',
-		'90th%': 'Max',
-	};
-	const [timer, setTimer] = useState(0);
-	const timerRef = useRef<NodeJS.Timer | null>(null);
+// ======================
+// Constants
+// ======================
+const hailColorMap: Record<string, [number, number, number]> = {
+  '0.75': [255, 255, 190],
+  '1': [255, 255, 34],
+  '1.25': [255, 212, 0],
+  '1.5': [255, 157, 0],
+  '1.75': [255, 102, 0],
+  '2': [255, 45, 0],
+  '2.25': [249, 0, 0],
+  '2.5': [226, 0, 0],
+  '2.75': [206, 0, 0],
+  '3': [182, 0, 0],
+  '3.25': [160, 0, 0],
+  '3.5': [168, 0, 39],
+  '3.75': [189, 0, 96],
+};
+const sortedKeys = Object.keys(hailColorMap).map(Number).sort((a, b) => a - b);
+
+const totalColor: Record<string, [number, number, number]> = {
+  Total: [180, 180, 180],
+};
+
+const headerLabels: Record<string, string> = {
+  diam_in: 'Hail Size',
+  count: 'Count',
+  '10th%': 'Low',
+  '25th%': 'Lower Bound',
+  '50th%': 'Mean',
+  '75th%': 'Upper Bound',
+  '90th%': 'Max',
+};
+
+// ======================
+// State
+// ======================
+const [stormDate, setStormDate] = useState<string>('');
+const [frozenStormDate, setFrozenStormDate] = useState<string | null>(null);
+const [status, setStatus] = useState('Waiting for user input');
+const [isRunning, setIsRunning] = useState(false);
+
+const [jobInfo, setJobInfo] = useState<any>(null);
+const [tableData, setTableData] = useState<any[]>([]);
+const [showTable, setShowTable] = useState(false);
+const [hideCols, setHideCols] = useState(true);
+
+const [timer, setTimer] = useState(0);
+
+// ======================
+// Refs
+// ======================
+const canopyHost = useRef(window.location.hostname);
+const map = useRef<any>(null);
+const dsManager = useRef(DataSourceManager.getInstance());
+const timerRef = useRef<NodeJS.Timer | null>(null);
+
+// ======================
+// Helpers
+// ======================
+const toggleHideCols = () => setHideCols((prev) => !prev);
 
 	useEffect(() => {
 		if (isRunning) {
@@ -76,8 +95,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 		return `${mins}:${secs}`;
 	};
 
-
-
+	// Initial setup
 	useEffect(() => {
 		const viewManager = MapViewManager.getInstance()
 		map.current = viewManager.getJimuMapViewById(viewManager.getAllJimuMapViewIds()[0])
@@ -95,11 +113,13 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 		}
 	}, [])
 
+	// Hail prediction service URL
 	const HailPredictionURL = `https://${canopyHost.current}/arcgis/rest/services/GPTools/HailPredictionTool/GPServer/HailPredictionTool`;
 
+	// Fetch hail layer from prediction service
 	const fetchHailLayer = async (jobInfo) => {
 		try {
-			// Fetch hail layer dataz
+			// Fetch hail layer data
 			jobInfo.fetchResultData('Output_Hail_Layer')
 			.then((layer) => {
 				console.log('Retrieved hail layer data:', layer);
@@ -110,7 +130,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 					color: [110, 110, 110, 1],
 					width: .5,
 				})
-
+				// Create feature layer
 				let hailLayer = new FeatureLayer({
 					source: layer.value.features,
 					objectIdField: 'OBJECTID',
@@ -120,7 +140,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 					opacity: 0.6,
 					layerId: 0,
 				})
-
+				// Set renderer for hail layer, different colors for each layer
 				hailLayer.renderer = {
 					type: "unique-value",  // autocasts as new UniqueValueRenderer()
 					// @ts-ignore
@@ -133,97 +153,98 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 					uniqueValueInfos: [{
 						value: '0.75"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [255, 255, 190, 1.0],
 							outline: line
 						}
 					}, {
 						value: '1"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill", 
 							color: [255, 255, 34, 1.0],
 							outline: line
 						}
 					}, {
 						value: "1.25\"",
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [255, 212, 0, 1.0],
 							outline: line
 						}
 					}, {
 						value: '1.5"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [255, 157, 0, 1.0],
 							outline: line
 						}
 					}, {
 						value: '1.75"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [255, 102, 0, 1.0],
 							outline: line
 						}
 					}, {
 						value: '2"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [255, 45, 0, 1.0],
 							outline: line
 						}
 					}, {
 						value: '2.25"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [249, 0, 0, 1.0],
 							outline: line
 						}
 					}, {
 						value: '2.5"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [226, 0, 0, 1.0],
 							outline: line
 						}
 					}, {
 						value: '2.75"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [206, 0, 0, 1.0],
 							outline: line
 						}
 					}, {
 						value: '3"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [182, 0, 0, 1.0],
 							outline: line
 						}
 					}, {
 						value: '3.25"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [160, 0, 0, 1.0],
 							outline: line
 						}
 					}, {
 						value: '3.5"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [168, 0, 39, 1.0],
 							outline: line
 						}
 					}, {
 						value: '3.75"',
 						symbol: {
-							type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+							type: "simple-fill",
 							color: [189, 0, 96, 1.0],
 							outline: line
 						}
 					}]
 				}
 
+				// Create data source for hail layer
 				const data: DataSourceJson = {
 					id: 'hail_ds_',
 					layerId: hailLayer.id,
@@ -231,7 +252,9 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 					label: hailLayer.title,
 				}
 
+				// Create immutable data source JSON
 				const dataJson = Immutable(data)
+				// Create data source options
 				const dataSourceOptions = {
 					id: 'hail_ds_',
 					layer: hailLayer,
@@ -239,7 +262,9 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 					dataSourceJson: dataJson,
 				}
 
+				// Create data source
 				dsManager.current.createDataSource(dataSourceOptions).then((source) => {
+					// Add layer to map
 					map.current.view.map.add(hailLayer)
 					map.current.createJimuLayerView(hailLayer, map.current.id, hailLayer.id, source, true).then((response) => {
 						//setStatus('Hail from  added')
@@ -256,6 +281,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 		}
 	};
 
+	// Fetch JSON data
 	const fetchJsonData = async (jobInfo) => {
 		try {
 			// Fetch JSON data
@@ -277,10 +303,13 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 
 	// Main process
 	const handleRunProcess = async () => {
+		// Reset state
 		setFrozenStormDate(stormDate);
+		// Clear previous results
 		setIsRunning(true);
 		setStatus('Running analysis...');
 		let params
+		// Prepare parameters for the geoprocessing job
 		params = {
 			Hail_date: stormDate.toISOString().split('T')[0]
 		}
@@ -305,7 +334,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 			const hailLayer = await fetchHailLayer(submitResponse);
 			const jsonData = await fetchJsonData(submitResponse);
 
-
+			// Process JSON data
 			if (jsonData && Array.isArray(jsonData)) {
 				setTableData(jsonData);
 				setStatus('Analysis complete');
@@ -323,13 +352,16 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 		}
 	};
 
+	// Define table row type
 	type TableRow = {
 		diam_in?: number;
 		[key: string]: any;
 	};
 
+	// Define constant for diameter field
 	const DIAMETER_FIELD = 'diam_in';
 
+	// Check if a table row has multiple non-empty values
 	const hasMultipleValues = (row: TableRow): boolean => {
 		if (!row) return false;
 
@@ -349,6 +381,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 		return nonEmptyFields.length > 0;
 	};
 
+	// Render component
 	return (
 		<div>
 			{!showTable ? (
@@ -376,8 +409,10 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 						opacity: isRunning ? 0.5 : 1,   // greyed out effect
 					}}
 				>
+				{/* Button label */}
 				{isRunning ? 'Running...' : 'Run Analysis'}
 				</button>
+				{/* Helper Text */}
 				<div  style={{ alignItems: 'center' }} className="helper-text">
 					Select a date, and the program will analyze historical hail event data 
 					from the database to predict the expected number of insurance claims.
@@ -385,13 +420,14 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 						<li>Separate tables for states with significant shares of total claims: Texas (52.5%), Colorado (11.3%), and Other states combined (36.2%)</li>
 						<li>The mean reflects the approximate average number of claims.</li>
 						<li>The lower bound and upper bound represent the range of expected claims.</li>
-						<li>The 1st and 99th percentiles represent the extreme ends of the distribution, indicating rare events.</li>
+						<li>The 5th and 90th percentiles represent the extreme ends of the distribution, indicating rare events.</li>
 					</ul>
 				</div>
+				{/* Loading Indicators */}
 				{isRunning && (
 					<ul style={{
 						display: 'flex',
-						justifyContent: 'center',   // horizontal centering
+						justifyContent: 'center',
 						listStyle: 'none',
 						padding: 0
 					}}>
@@ -404,11 +440,13 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 						</li>
 					</ul>
 				)}
+				{/* Timer Display */}
 				{timer > 0 && (
 					<div className="timer-display">
 						Elapsed Time: {formatTime(timer)}
 					</div>
 				)}
+				{/* Loading Icon */}
 				{status !== 'Waiting for user input' && (
 				<div style={{ alignItems: 'center' }} className="analysis-loading-container">
 					<div className="lds-ring" id="loadingIcon">
@@ -427,6 +465,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 						day: 'numeric',
 					})}
 				</h2>
+				{/* Back Button */}
 				<div className="back-button">
 					<button
 						className="button"
@@ -436,6 +475,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 					</button>
 				</div>
 
+				{/* Scrollable Container */}
 				<div className="scrollable-container">
 					{tableData
 						// First filter out groups with no valid rows
@@ -461,6 +501,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 											</tr>
 										</thead>
 										<tbody>
+											{/* Render table rows */}
 											{group.rows
 												.filter(hasMultipleValues)
 												.map((row, rowIndex, rowArray) => {
@@ -478,16 +519,16 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 															}
 														}
 													}
-
+													// Determine row style based on whether it's a total row
 													const rowStyle = isTotalRow
 														? { backgroundColor: `rgb(${totalColor['Total'].join(',')})`, fontWeight: 'bold' }
 														: { fontWeight: 'normal' };
-
+													// Determine cell style based on whether it's a total row
 													return (
 														<tr key={rowIndex} style={rowStyle}>
 															{visibleColumns.map((col: string, colIndex) => {
 																const originalIndex = group.columns.indexOf(col);
-
+														// Determine cell content based on row and column indices
 														let cellContent = '';
 														if (rowIndex === 0 && originalIndex === 1) {
 															cellContent = '';
@@ -502,7 +543,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 																? Math.round(rawValue)
 																: rawValue;
 														}
-
+														// Determine cell style based on whether it's a total row
 														const cellStyle =
 															colIndex <= 1
 															? {
@@ -528,6 +569,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 									</table>
 								</div>
 							)})}
+						{/* Toggle Button */}
 						<div className="button-wrapper">
 							<button className="button" onClick={toggleHideCols}>
 								{hideCols ? 'Show more data' : 'Show less data'}
